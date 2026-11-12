@@ -442,10 +442,8 @@ class ImageStylizerWindow(QMainWindow):
         has_images = bool(self.input_paths)
         valid_preview = self.original_image is not None
         exporting = self.export_worker is not None
-        self.previous_button.setEnabled(has_images and self.current_index > 0)
-        self.next_button.setEnabled(
-            has_images and self.current_index < len(self.input_paths) - 1
-        )
+        self.previous_button.setEnabled(has_images)
+        self.next_button.setEnabled(has_images)
         self.export_button.setEnabled(has_images and bool(self.output_dir) and not exporting)
         self.remove_image_button.setEnabled(has_images and not exporting)
         self.clear_images_button.setEnabled(has_images and not exporting)
@@ -1180,14 +1178,14 @@ class ImageStylizerWindow(QMainWindow):
                 self.preview_timer.start(0)
 
     def previous_image(self):
-        if self.current_index > 0:
-            self.current_index -= 1
+        if self.input_paths:
+            self.current_index = (self.current_index - 1) % len(self.input_paths)
             self.load_current_image()
             self.refresh_action_availability()
 
     def next_image(self):
-        if self.current_index < len(self.input_paths) - 1:
-            self.current_index += 1
+        if self.input_paths:
+            self.current_index = (self.current_index + 1) % len(self.input_paths)
             self.load_current_image()
             self.refresh_action_availability()
 
