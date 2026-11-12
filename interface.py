@@ -87,6 +87,7 @@ class ImageStylizerWindow(QMainWindow):
         self.setup_ui()
         self.restore_paths()
         self.refresh_presets()
+        self.restore_last_selected_preset()
         if self.preset_manager.load_error:
             QMessageBox.warning(self, "Presets illisibles", self.preset_manager.load_error)
         self.set_preview_state("empty")
@@ -591,6 +592,16 @@ class ImageStylizerWindow(QMainWindow):
         self.preset_combo.blockSignals(False)
         self.refresh_action_availability()
 
+    def restore_last_selected_preset(self):
+        """Recharge un preset existant, sinon conserve Personnalisé."""
+        name = self.settings.value("ui/last_selected_preset", "") or ""
+        if not isinstance(name, str) or not name:
+            return
+        index = self.preset_combo.findData(name)
+        if index > 0:
+            # currentIndexChanged applique le preset via le signal existant.
+            self.preset_combo.setCurrentIndex(index)
+
     def on_parameter_changed(self):
         if self.applying_preset:
             return
@@ -1088,5 +1099,8 @@ class ImageStylizerWindow(QMainWindow):
             self.statusBar().showMessage("Fermeture dès la fin du calcul en cours...")
             event.ignore()
             return
+        # Ne sauvegarder qu'à la fermeture réellement autorisée.
+        self.settings.setValue("ui/last_selected_preset", self.preset_combo.currentData() or "")
+        self.settings.sync()
         super().closeEvent(event)
 
