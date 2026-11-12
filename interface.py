@@ -44,6 +44,7 @@ from presets import create_settings
 from widgets import ImageCanvas, ViewTransform
 from style_randomizer import DEFAULT_PARAMETERS, STYLE_FAMILIES, generate_style
 from widgets import ResettableSlider, LoadingBorder
+from gallery import ImageGalleryDialog
 
 
 class ImageStylizerWindow(QMainWindow):
@@ -360,20 +361,33 @@ class ImageStylizerWindow(QMainWindow):
         self.change_compare_mode()
 
         navigation_layout = QHBoxLayout()
-        self.previous_button = QPushButton("← Précédente")
-        self.next_button = QPushButton("Suivante →")
-        self.remove_image_button = QPushButton("Retirer l'image")
-        self.clear_images_button = QPushButton("Tout vider")
-        self.previous_button.setMinimumHeight(34)
-        self.next_button.setMinimumHeight(34)
+        navigation_layout.setSpacing(8)
+        self.previous_button = QPushButton("❮")
+        self.next_button = QPushButton("❯")
+        for button, hint in (
+            (self.previous_button, "Image précédente"),
+            (self.next_button, "Image suivante"),
+        ):
+            button.setFixedSize(46, 40)
+            button.setToolTip(hint)
+            button.setStyleSheet("font-size: 23px; font-weight: 700;")
+        self.gallery_button = QPushButton("Galerie…")
+        self.gallery_button.setMinimumHeight(40)
+        self.gallery_button.setToolTip("Afficher toutes les images du lot")
+        self.remove_image_button = QPushButton("Retirer")
+        self.remove_image_button.setToolTip("Retirer l'image affichée du lot")
+        self.clear_images_button = QPushButton("🗑 Tout vider")
+        self.clear_images_button.setToolTip("Vider le lot sans supprimer les fichiers du disque")
         for button in (self.remove_image_button, self.clear_images_button):
-            button.setMinimumHeight(34)
-        navigation_layout.addStretch()
+            button.setMinimumHeight(36)
+        navigation_layout.addStretch(1)
         navigation_layout.addWidget(self.previous_button)
         navigation_layout.addWidget(self.next_button)
+        navigation_layout.addWidget(self.gallery_button)
+        navigation_layout.addStretch(1)
         navigation_layout.addWidget(self.remove_image_button)
         navigation_layout.addWidget(self.clear_images_button)
-        navigation_layout.addStretch()
+        self.gallery_button.clicked.connect(self.open_image_gallery)
         self.remove_image_button.clicked.connect(self.remove_current_image)
         self.clear_images_button.clicked.connect(self.clear_input_images)
 
@@ -435,6 +449,7 @@ class ImageStylizerWindow(QMainWindow):
         self.export_button.setEnabled(has_images and bool(self.output_dir) and not exporting)
         self.remove_image_button.setEnabled(has_images and not exporting)
         self.clear_images_button.setEnabled(has_images and not exporting)
+        self.gallery_button.setEnabled(has_images and not exporting)
         self.import_button.setEnabled(not exporting)
         self.preset_delete_button.setEnabled(bool(self.preset_combo.currentData()))
         for control in (self.zoom_out_button, self.zoom_in_button, self.zoom_reset_button):
@@ -872,6 +887,44 @@ class ImageStylizerWindow(QMainWindow):
             f"{len(added)} image(s) ajoutée(s), {len(self.input_paths)} au total."
         )
         return len(added)
+
+    def open_image_gallery(self):
+        """Galerie modale des images originales, avec accès direct au lot."""
+        if not self.input_paths or self.export_worker is not None:
+            return
+        dialog = ImageGalleryDialog(
+            self.input_paths, active_path=self.input_paths[self.current_index], parent=self
+        )
+        dialog.remove_requested.connect(self.remove_images_from_gallery)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            path = dialog.selected_path
+            if path in self.input_paths:
+                index = self.input_paths.index(path)
+                if index != self.current_index:
+                    self.current_index = index
+                    self.load_current_image()
+        self.refresh_action_availability()
+
+    def remove_images_from_gallery(self, paths):
+        """Retire plusieurs images du lot sans supprimer leur fichier."""
+        if self.export_worker is not None or not paths:
+            return
+        removed = set(paths)
+        active = self.input_paths[self.current_index] if self.input_paths else None
+        old_index = self.current_index
+        self.input_paths = [path for path in self.input_paths if path not in removed]
+        if not self.input_paths:
+            self._reset_empty_selection()
+            return
+        if active in self.input_paths:
+            self.current_index = self.input_paths.index(active)
+            self.image_counter.setText(
+                f"Image {self.current_index + 1} / {len(self.input_paths)}"
+            )
+            self.refresh_action_availability()
+        else:
+            self.current_index = min(old_index, len(self.input_paths) - 1)
+            self.load_current_image()
 
     def remove_current_image(self):
         """Retire seulement du lot, sans supprimer le fichier sur le disque."""
