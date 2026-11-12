@@ -362,12 +362,20 @@ class ImageStylizerWindow(QMainWindow):
         navigation_layout = QHBoxLayout()
         self.previous_button = QPushButton("← Précédente")
         self.next_button = QPushButton("Suivante →")
+        self.remove_image_button = QPushButton("Retirer l'image")
+        self.clear_images_button = QPushButton("Tout vider")
         self.previous_button.setMinimumHeight(34)
         self.next_button.setMinimumHeight(34)
+        for button in (self.remove_image_button, self.clear_images_button):
+            button.setMinimumHeight(34)
         navigation_layout.addStretch()
         navigation_layout.addWidget(self.previous_button)
         navigation_layout.addWidget(self.next_button)
+        navigation_layout.addWidget(self.remove_image_button)
+        navigation_layout.addWidget(self.clear_images_button)
         navigation_layout.addStretch()
+        self.remove_image_button.clicked.connect(self.remove_current_image)
+        self.clear_images_button.clicked.connect(self.clear_input_images)
 
         preview_column_layout.addLayout(navigation_layout)
         content_layout.addWidget(preview_column, 1)
@@ -425,6 +433,9 @@ class ImageStylizerWindow(QMainWindow):
             has_images and self.current_index < len(self.input_paths) - 1
         )
         self.export_button.setEnabled(has_images and bool(self.output_dir) and not exporting)
+        self.remove_image_button.setEnabled(has_images and not exporting)
+        self.clear_images_button.setEnabled(has_images and not exporting)
+        self.import_button.setEnabled(not exporting)
         self.preset_delete_button.setEnabled(bool(self.preset_combo.currentData()))
         for control in (self.zoom_out_button, self.zoom_in_button, self.zoom_reset_button):
             control.setEnabled(valid_preview)
@@ -777,7 +788,7 @@ class ImageStylizerWindow(QMainWindow):
         )
 
     def _handle_dropped_images(self, paths):
-        """Le dépôt remplace la sélection, comme le bouton Importer des images."""
+        """Ajoute les images déposées sans remplacer la sélection courante."""
         extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
         images = []
         seen = set()
@@ -811,25 +822,96 @@ class ImageStylizerWindow(QMainWindow):
         # Un dossier déposé devient le chemin d'entrée affiché ; sinon
         # il s'agit du dossier parent de la première image.
         source_dir = str(dropped_folders[0]) if dropped_folders else str(Path(images[0]).parent)
-        self._set_input_images(images, source_dir=source_dir)
-        self.statusBar().showMessage(f"Glisser-déposer : {len(images)} image(s) importée(s).", 6000)
+        added = self._set_input_images(images, source_dir=source_dir)
+        self.statusBar().showMessage(
+            f"Glisser-déposer : {added} nouvelle(s) image(s), "
+            f"{len(self.input_paths)} au total.", 6000
+        )
+
+    @staticmethod
+    def _image_identity(path):
+        """Identité canonique, insensible à la casse uniquement sur Windows."""
+        return os.path.normcase(str(Path(path).resolve()))
 
     def _set_input_images(self, paths, source_dir=None):
-        """Chargement commun au bouton Importer et au glisser-déposer."""
+        """Ajoute sans doublons, en conservant l'image actuellement affichée."""
         if not paths or self.export_worker is not None:
+            return 0
+        existing = {self._image_identity(path) for path in self.input_paths}
+        added = []
+        for raw in paths:
+            path = Path(raw)
+            if not path.is_file() or path.suffix.lower() not in {
+                ".png", ".jpg", ".jpeg", ".webp", ".bmp"
+            }:
+                continue
+            canonical = str(path.resolve())
+            key = self._image_identity(canonical)
+            if key not in existing:
+                existing.add(key)
+                added.append(canonical)
+        if not added:
+            self.statusBar().showMessage("Aucune nouvelle image à ajouter.", 5000)
+            return 0
+
+        was_empty = not self.input_paths
+        self.input_paths.extend(added)
+        # Le dossier mémorisé sert au sélecteur de fichiers. Le libellé
+        # visible suit uniquement l'image actuellement sélectionnée.
+        self.last_input_dir = source_dir or str(Path(added[0]).parent)
+        self.settings.setValue("last_input_dir", self.last_input_dir)
+        if was_empty:
+            self.current_index = 0
+            self.load_current_image()
+        else:
+            self.image_counter.setText(
+                f"Image {self.current_index + 1} / {len(self.input_paths)}"
+            )
+        self.refresh_action_availability()
+        self.statusBar().showMessage(
+            f"{len(added)} image(s) ajoutée(s), {len(self.input_paths)} au total."
+        )
+        return len(added)
+
+    def remove_current_image(self):
+        """Retire seulement du lot, sans supprimer le fichier sur le disque."""
+        if self.export_worker is not None or not self.input_paths:
             return
-        self.input_paths = list(paths)
+        self.input_paths.pop(self.current_index)
+        if not self.input_paths:
+            self._reset_empty_selection()
+            return
+        self.current_index = min(self.current_index, len(self.input_paths) - 1)
+        self.load_current_image()
+
+    def clear_input_images(self):
+        """Vide le lot, sans toucher aux images sources."""
+        if self.export_worker is not None or not self.input_paths:
+            return
+        self.input_paths.clear()
+        self._reset_empty_selection()
+
+    def _reset_empty_selection(self):
         self.current_index = 0
-        self.preview_cache.clear()
+        self.preview_timer.stop()
         self.desired_cache_key = None
+        self.active_cache_key = None
+        self.failed_cache_key = None
         if self.preview_worker is not None:
             self.preview_worker.requestInterruption()
-        self.last_input_dir = source_dir or str(Path(paths[0]).parent)
-        self.settings.setValue("last_input_dir", self.last_input_dir)
-        self.load_current_image()
-        self.update_input_dir_label(self.last_input_dir)
+        self.preview_cache.clear()
+        self.original_image = None
+        self.processed_image = None
+        self.original_pixmap = None
+        self.result_pixmap = None
+        self.image_name_label.setText("Aucune image sélectionnée")
+        self.image_counter.setText("0 / 0")
+        self.update_input_dir_label("")
+        self.view_state.reset()
+        self.set_viewer_images()
+        self.set_preview_state("empty")
         self.refresh_action_availability()
-        self.statusBar().showMessage(f"{len(paths)} image(s) sélectionnée(s)")
+        self.statusBar().showMessage("Sélection d'images vidée.")
 
     def select_output_dir(self):
         start_dir = self.output_dir if self.output_dir else str(Path.home())
