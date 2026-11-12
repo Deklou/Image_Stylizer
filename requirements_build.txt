@@ -1,0 +1,7 @@
+# Installer dans un venv Windows dédié au build pour éviter le conflit
+# entre les plugins Qt d'OpenCV et ceux de PySide6.
+PySide6>=6.10,<7
+Pillow>=11,<13
+numpy>=2.0,<3
+opencv-python-headless>=4.10,<5
+pyinstaller>=6.17,<7
