@@ -99,7 +99,25 @@ def build_suffix(parameters):
     return suffix
 
 
-def export_image(input_path, output_dir, parameters, image_format="PNG", quality=90):
+def sanitize_preset_name(name):
+    """Suffixe de preset sûr pour un nom de fichier Windows."""
+    import re
+    import unicodedata
+
+    normalized = unicodedata.normalize("NFKD", str(name))
+    ascii_name = "".join(c for c in normalized if not unicodedata.combining(c))
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "-", ascii_name).strip("-_")[:64]
+    if not cleaned:
+        cleaned = "preset"
+    reserved = {"CON", "PRN", "AUX", "NUL"} | {
+        f"{prefix}{i}" for prefix in ("COM", "LPT") for i in range(1, 10)
+    }
+    if cleaned.upper() in reserved:
+        cleaned = f"preset-{cleaned}"
+    return cleaned
+
+
+def export_image(input_path, output_dir, parameters, image_format="PNG", quality=90, preset_name=None):
     """Traite puis publie l'export sans écraser ni laisser de fichier incomplet.
 
     L'encodage se fait d'abord dans un fichier temporaire placé dans le dossier
@@ -117,7 +135,7 @@ def export_image(input_path, output_dir, parameters, image_format="PNG", quality
     if not (1 <= int(quality) <= 100):
         raise ValueError("La qualité doit être comprise entre 1 et 100.")
 
-    suffix = build_suffix(parameters)
+    suffix = sanitize_preset_name(preset_name) if preset_name else build_suffix(parameters)
     extension = format_extensions[image_format]
 
     save_options = {}

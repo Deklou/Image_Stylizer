@@ -57,13 +57,14 @@ class ExportWorker(QThread):
     progress = Signal(int, int)
     completed = Signal(int, list, bool)
 
-    def __init__(self, input_paths, output_dir, parameters, image_format="PNG", quality=90):
+    def __init__(self, input_paths, output_dir, parameters, image_format="PNG", quality=90, preset_name=None):
         super().__init__()
         self.input_paths = list(input_paths)
         self.output_dir = str(output_dir)
         self.parameters = dict(parameters)
         self.image_format = image_format
         self.quality = quality
+        self.preset_name = preset_name
         self._cancel_requested = Event()
         self.summary = None
 
@@ -88,6 +89,7 @@ class ExportWorker(QThread):
                     self.parameters,
                     image_format=self.image_format,
                     quality=self.quality,
+                    preset_name=self.preset_name,
                 )
                 exported += 1
             except Exception as exc:

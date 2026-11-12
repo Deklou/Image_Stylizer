@@ -1006,6 +1006,7 @@ class ImageStylizerWindow(QMainWindow):
             self.get_parameters(),
             image_format=options["image_format"],
             quality=options["quality"],
+            preset_name=self.preset_combo.currentData(),
         )
         self.export_worker.progress.connect(self.update_export_progress)
         self.export_worker.completed.connect(self.export_finished)
