@@ -6,3 +6,6 @@ __pycache__/
 build/
 dist/
 *.exe
+dist_unique/
+*.spec
+.pytest_cache/

@@ -96,7 +96,7 @@ class StabilizationTests(unittest.TestCase):
         pyside = types.ModuleType("PySide6")
         spec = importlib.util.spec_from_file_location(
             "settings_manager_under_test",
-            Path(__file__).resolve().parent.parent / "settings_manager.py",
+            Path(__file__).resolve().parent.parent / "presets.py",
         )
         with patch.dict(sys.modules, {"PySide6": pyside, "PySide6.QtCore": qt_core}):
             mod = importlib.util.module_from_spec(spec)

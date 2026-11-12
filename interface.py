@@ -34,15 +34,15 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
 )
 
-from export_worker import ExportWorker
+from workers import ExportWorker
 from export_dialog import ExportOptionsDialog
-from preview_worker import PreviewWorker
-from preview_cache import PreviewCache
+from workers import PreviewWorker
+from workers import PreviewCache
 from presets import PresetManager
-from settings_manager import create_settings
-from image_viewer import ImageCanvas, ViewTransform
+from presets import create_settings
+from widgets import ImageCanvas, ViewTransform
 from style_randomizer import DEFAULT_PARAMETERS, STYLE_FAMILIES, generate_style
-from ui_widgets import ResettableSlider, LoadingBorder
+from widgets import ResettableSlider, LoadingBorder
 
 
 class ImageStylizerWindow(QMainWindow):
