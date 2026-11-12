@@ -97,8 +97,19 @@ class ImageStylizerWindow(QMainWindow):
         QApplication.instance().installEventFilter(self)
 
     def setup_ui(self):
+        # Un viewport avec défilement laisse la fenêtre se réduire même si les
+        # trois panneaux supérieurs et les aperçus nécessitent plus de place.
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setMinimumSize(0, 0)
         central_widget = QWidget()
-        self.setCentralWidget(central_widget)
+        central_widget.setMinimumSize(0, 0)
+        scroll.setWidget(central_widget)
+        self.setCentralWidget(scroll)
+        self.setMinimumSize(620, 340)
 
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(12, 12, 12, 12)
