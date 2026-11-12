@@ -1,5 +1,6 @@
 from pathlib import Path
 import secrets
+import os
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
@@ -95,6 +96,7 @@ class ImageStylizerWindow(QMainWindow):
         # Recevoir les touches AVANT les widgets ayant le focus :
         # keyPressEvent() seul ne reçoit pas les flèches consommées par un bouton.
         QApplication.instance().installEventFilter(self)
+        self._install_image_drop_targets()
 
     def setup_ui(self):
         # Un viewport avec défilement laisse la fenêtre se réduire même si les
@@ -428,6 +430,26 @@ class ImageStylizerWindow(QMainWindow):
             control.setEnabled(valid_preview)
 
     def eventFilter(self, watched, event):
+        # Le filtre global installé plus haut permet de recevoir aussi
+        # les dépôts sur les zones d'aperçu et le panneau de réglages.
+        if (
+            event.type() in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop)
+            and isinstance(watched, QWidget)
+            and watched.window() is self
+            and event.mimeData().hasUrls()
+        ):
+            if self.export_worker is not None:
+                event.ignore()
+                return True
+            local_paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
+            if not local_paths:
+                event.ignore()
+                return True
+            if event.type() == QEvent.Type.Drop:
+                self._handle_dropped_images(local_paths)
+            event.acceptProposedAction()
+            return True
+
         # Les flèches parcourent les images sauf quand un contrôle éditable
         # les utilise. Échap réinitialise tous les paramètres comme le
         # bouton « Réinitialiser » d'Explorer les styles.
@@ -738,20 +760,76 @@ class ImageStylizerWindow(QMainWindow):
         )
 
         if paths:
-            self.input_paths = paths
-            self.current_index = 0
-            self.preview_cache.clear()
-            self.desired_cache_key = None
-            if self.preview_worker is not None:
-                self.preview_worker.requestInterruption()
+            self._set_input_images(paths)
 
-            first_dir = str(Path(paths[0]).parent)
-            self.last_input_dir = first_dir
-            self.settings.setValue("last_input_dir", self.last_input_dir)
+    def _install_image_drop_targets(self):
+        """Autorise le drop dans la fenêtre, notamment les aperçus Qt imbriqués."""
+        scroll = self.centralWidget()
+        content = scroll.widget()
+        for widget in (
+            self, scroll, scroll.viewport(), content,
+            self.preview_stack, self.original_view, self.result_view,
+            self.wipe_view, self.input_dir_label,
+        ):
+            widget.setAcceptDrops(True)
+        self.import_button.setToolTip(
+            "Choisir des images ou glisser ici des images / un dossier"
+        )
 
-            self.load_current_image()
-            self.refresh_action_availability()
-            self.statusBar().showMessage(f"{len(paths)} image(s) sélectionnée(s)")
+    def _handle_dropped_images(self, paths):
+        """Le dépôt remplace la sélection, comme le bouton Importer des images."""
+        extensions = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+        images = []
+        seen = set()
+        dropped_folders = []
+        for raw in paths:
+            path = Path(raw)
+            try:
+                if path.is_dir():
+                    dropped_folders.append(path)
+                    candidates = path.rglob("*")
+                elif path.is_file():
+                    candidates = (path,)
+                else:
+                    continue
+                for candidate in candidates:
+                    if not candidate.is_file() or candidate.suffix.lower() not in extensions:
+                        continue
+                    canonical = str(candidate.resolve())
+                    key = os.path.normcase(canonical)
+                    if key not in seen:
+                        seen.add(key)
+                        images.append(canonical)
+            except OSError:
+                continue
+
+        if not images:
+            self.statusBar().showMessage("Aucune image compatible dans le dépôt.", 6000)
+            return
+
+        images.sort(key=str.casefold)
+        # Un dossier déposé devient le chemin d'entrée affiché ; sinon
+        # il s'agit du dossier parent de la première image.
+        source_dir = str(dropped_folders[0]) if dropped_folders else str(Path(images[0]).parent)
+        self._set_input_images(images, source_dir=source_dir)
+        self.statusBar().showMessage(f"Glisser-déposer : {len(images)} image(s) importée(s).", 6000)
+
+    def _set_input_images(self, paths, source_dir=None):
+        """Chargement commun au bouton Importer et au glisser-déposer."""
+        if not paths or self.export_worker is not None:
+            return
+        self.input_paths = list(paths)
+        self.current_index = 0
+        self.preview_cache.clear()
+        self.desired_cache_key = None
+        if self.preview_worker is not None:
+            self.preview_worker.requestInterruption()
+        self.last_input_dir = source_dir or str(Path(paths[0]).parent)
+        self.settings.setValue("last_input_dir", self.last_input_dir)
+        self.load_current_image()
+        self.update_input_dir_label(self.last_input_dir)
+        self.refresh_action_availability()
+        self.statusBar().showMessage(f"{len(paths)} image(s) sélectionnée(s)")
 
     def select_output_dir(self):
         start_dir = self.output_dir if self.output_dir else str(Path.home())
